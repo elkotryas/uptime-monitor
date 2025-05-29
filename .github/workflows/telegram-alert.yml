@@ -1,0 +1,44 @@
+name: Telegram Alert on Downtime
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # каждые 5 минут
+  workflow_dispatch:
+
+jobs:
+  check-status:
+    name: Проверка статуса и оповещение
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Установка зависимостей
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Получить список недоступных сайтов
+        id: check-sites
+        run: |
+          summary_file=".upptime/summary.json"
+          if [ ! -f "$summary_file" ]; then
+            echo "down_sites=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          down_sites=$(jq -r '.sites[] | select(.status != "up") | "- \(.name): \(.url)"' $summary_file | tr '\n' '\n')
+          echo "down_sites=$down_sites" >> $GITHUB_OUTPUT
+
+      - name: Отправить уведомление в Telegram
+        if: ${{ steps.check-sites.outputs.down_sites != '' }}
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: |
+            🚨 Обнаружена проблема с сайтами:
+            ${{ steps.check-sites.outputs.down_sites }}
+
+            📊 Проверить статус: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
