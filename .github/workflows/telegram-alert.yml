@@ -1,44 +1,40 @@
-name: Telegram Alert on Downtime
+name: Telegram Uptime Alerts
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # каждые 5 минут
+    - cron: "*/5 * * * *" # каждые 5 минут
   workflow_dispatch:
 
 jobs:
-  check-status:
-    name: Проверка статуса и оповещение
+  check-sites:
+    name: Check Sites and Notify
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Установка зависимостей
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+      - name: Install dependencies
+        run: sudo apt-get install -y jq
 
-      - name: Получить список недоступных сайтов
-        id: check-sites
+      - name: Get down sites
+        id: get-down
         run: |
-          summary_file=".upptime/summary.json"
-          if [ ! -f "$summary_file" ]; then
-            echo "down_sites=" >> $GITHUB_OUTPUT
-            exit 0
+          if [ -f ".upptime/summary.json" ]; then
+            down=$(jq -r '.sites[] | select(.status != "up") | "- \(.name): \(.url)"' .upptime/summary.json | tr '\n' '\n')
+            echo "down_sites<<EOF" >> $GITHUB_ENV
+            echo "$down" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
           fi
 
-          down_sites=$(jq -r '.sites[] | select(.status != "up") | "- \(.name): \(.url)"' $summary_file | tr '\n' '\n')
-          echo "down_sites=$down_sites" >> $GITHUB_OUTPUT
-
-      - name: Отправить уведомление в Telegram
-        if: ${{ steps.check-sites.outputs.down_sites != '' }}
+      - name: Send Telegram alert
+        if: env.down_sites != ''
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.TELEGRAM_TO }}
           token: ${{ secrets.TELEGRAM_TOKEN }}
           message: |
-            🚨 Обнаружена проблема с сайтами:
-            ${{ steps.check-sites.outputs.down_sites }}
-
-            📊 Проверить статус: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+            🚨 Один или несколько сайтов не работают:
+            ${{ env.down_sites }}
+            
+            📊 Статус: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
